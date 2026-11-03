@@ -22,6 +22,15 @@ export const QuizPlay = () => {
 
   if (!quiz) return <div className="text-center py-20">Loading Quiz...</div>;
 
+  if (!quiz.questions || quiz.questions.length === 0) {
+    return (
+      <div className="text-white p-8 text-center">
+        <h2>No questions found for this quiz!</h2>
+        <p>Please add questions from the Admin Panel.</p>
+      </div>
+    );
+  }
+
   const currentQ = quiz.questions[currentIndex];
 
   const handleNext = () => {

@@ -12,6 +12,7 @@ export const AdminDashboard = () => {
   // States for handling adding/editing questions and editing quiz metadata
   const [selectedQuiz, setSelectedQuiz] = useState(null);
   const [editingQuiz, setEditingQuiz] = useState(null);
+  const [editingQuestionIndex, setEditingQuestionIndex] = useState(null);
   const [questionText, setQuestionText] = useState('');
   const [options, setOptions] = useState(['', '', '', '']);
   const [correctAnswer, setCorrectAnswer] = useState(0);
@@ -36,7 +37,7 @@ export const AdminDashboard = () => {
   const createQuiz = (e) => {
     e.preventDefault();
     if (editingQuiz) {
-      // Update existing quiz
+      // Update existing quiz metadata
       axios.put(`http://localhost:5000/api/quizzes/${editingQuiz._id}`, newQuiz, { headers }).then(() => {
         setNewQuiz({ title: '', level: 'Beginner', category: '', questions: [] });
         setEditingQuiz(null);
@@ -56,7 +57,36 @@ export const AdminDashboard = () => {
     setNewQuiz({ title: quiz.title, level: quiz.level, category: quiz.category, questions: quiz.questions || [] });
   };
 
-  const handleAddQuestion = (e) => {
+  const handleOpenAddQuestions = (quiz) => {
+    setSelectedQuiz(quiz);
+    setEditingQuestionIndex(null);
+    setQuestionText('');
+    setOptions(['', '', '', '']);
+    setCorrectAnswer(0);
+  };
+
+  const handleEditQuestionClick = (index, question) => {
+    setEditingQuestionIndex(index);
+    setQuestionText(question.questionText);
+    setOptions(question.options || ['', '', '', '']);
+    setCorrectAnswer(question.correctAnswer ?? 0);
+  };
+
+  const handleDeleteQuestion = (index) => {
+    if (!selectedQuiz) return;
+    const updatedQuestions = selectedQuiz.questions.filter((_, i) => i !== index);
+
+    axios.put(`http://localhost:5000/api/quizzes/${selectedQuiz._id}`, {
+      ...selectedQuiz,
+      questions: updatedQuestions
+    }, { headers }).then(() => {
+      fetchData();
+      // Update local selectedQuiz state to reflect changes instantly
+      setSelectedQuiz({ ...selectedQuiz, questions: updatedQuestions });
+    });
+  };
+
+  const handleSaveQuestion = (e) => {
     e.preventDefault();
     if (!selectedQuiz) return;
 
@@ -66,16 +96,27 @@ export const AdminDashboard = () => {
       correctAnswer: Number(correctAnswer)
     };
 
-    const updatedQuestions = [...(selectedQuiz.questions || []), newQuestionObj];
+    let updatedQuestions = [...(selectedQuiz.questions || [])];
+
+    if (editingQuestionIndex !== null) {
+      // Edit existing question
+      updatedQuestions[editingQuestionIndex] = newQuestionObj;
+    } else {
+      // Add new question
+      updatedQuestions.push(newQuestionObj);
+    }
 
     axios.put(`http://localhost:5000/api/quizzes/${selectedQuiz._id}`, {
       ...selectedQuiz,
       questions: updatedQuestions
     }, { headers }).then(() => {
       fetchData();
+      // Keep modal open and refresh local selectedQuiz state
+      setSelectedQuiz({ ...selectedQuiz, questions: updatedQuestions });
       setQuestionText('');
       setOptions(['', '', '', '']);
-      setSelectedQuiz(null);
+      setCorrectAnswer(0);
+      setEditingQuestionIndex(null);
     });
   };
 
@@ -146,17 +187,29 @@ export const AdminDashboard = () => {
           </button>
         </form>
 
-        {/* Modal / Form for Adding Questions */}
+        {/* Modal / Panel for Adding & Managing Questions */}
         {selectedQuiz && (
-          <div className="bg-slate-800 p-5 rounded-xl mb-6 border border-slate-700">
-            <h4 className="text-lg font-bold text-amber-400 mb-3">Add Question to: {selectedQuiz.title}</h4>
-            <form onSubmit={handleAddQuestion} className="space-y-3">
+          <div className="bg-slate-800 p-5 rounded-xl mb-6 border border-slate-700 space-y-6">
+            <div className="flex justify-between items-center">
+              <h4 className="text-lg font-bold text-amber-400">
+                {editingQuestionIndex !== null ? 'Edit Question' : 'Add Question to'}: {selectedQuiz.title}
+              </h4>
+              <button 
+                onClick={() => setSelectedQuiz(null)} 
+                className="text-slate-400 hover:text-white text-sm bg-slate-700 px-3 py-1 rounded"
+              >
+                Close Panel
+              </button>
+            </div>
+
+            {/* Question Form */}
+            <form onSubmit={handleSaveQuestion} className="space-y-3">
               <input
                 type="text"
                 placeholder="Enter Question Text"
                 value={questionText}
                 onChange={(e) => setQuestionText(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 p-2 rounded text-white"
+                className="w-full bg-slate-900 border border-slate-700 p-2.5 rounded text-white"
                 required
               />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -171,7 +224,7 @@ export const AdminDashboard = () => {
                       newOpts[idx] = e.target.value;
                       setOptions(newOpts);
                     }}
-                    className="bg-slate-900 border border-slate-700 p-2 rounded text-white"
+                    className="bg-slate-900 border border-slate-700 p-2.5 rounded text-white"
                     required
                   />
                 ))}
@@ -190,13 +243,64 @@ export const AdminDashboard = () => {
                 </select>
               </div>
               <div className="flex gap-2 pt-2">
-                <button type="submit" className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold">Save Question</button>
-                <button type="button" onClick={() => setSelectedQuiz(null)} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded">Cancel</button>
+                <button type="submit" className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold">
+                  {editingQuestionIndex !== null ? 'Update Question' : 'Save Question'}
+                </button>
+                {editingQuestionIndex !== null && (
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setEditingQuestionIndex(null);
+                      setQuestionText('');
+                      setOptions(['', '', '', '']);
+                      setCorrectAnswer(0);
+                    }} 
+                    className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded"
+                  >
+                    Cancel Edit
+                  </button>
+                )}
               </div>
             </form>
+
+            {/* List of Existing Questions with Edit/Delete buttons */}
+            <div className="border-t border-slate-700 pt-4 mt-4 space-y-3">
+              <h5 className="font-semibold text-white text-sm">Existing Questions ({selectedQuiz.questions?.length || 0}):</h5>
+              {(!selectedQuiz.questions || selectedQuiz.questions.length === 0) ? (
+                <p className="text-xs text-slate-400 italic">No questions added to this quiz yet.</p>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                  {selectedQuiz.questions.map((q, qIndex) => (
+                    <div key={qIndex} className="bg-slate-900 p-3 rounded-lg border border-slate-700 flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-medium text-white">{qIndex + 1}. {q.questionText}</p>
+                        <p className="text-xs text-slate-400 mt-1">Correct Answer: Option {Number(q.correctAnswer) + 1}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => handleEditQuestionClick(qIndex, q)} 
+                          className="text-amber-400 hover:text-amber-300 p-1"
+                          title="Edit Question"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteQuestion(qIndex)} 
+                          className="text-red-400 hover:text-red-300 p-1"
+                          title="Delete Question"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
+        {/* Quizzes List */}
         <div className="space-y-3">
           {quizzes.map(q => (
             <div key={q._id} className="flex justify-between items-center bg-slate-800 p-4 rounded-xl">
@@ -206,7 +310,7 @@ export const AdminDashboard = () => {
               </div>
               <div className="flex items-center gap-3">
                 <button 
-                  onClick={() => setSelectedQuiz(q)} 
+                  onClick={() => handleOpenAddQuestions(q)} 
                   className="bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded-lg font-semibold"
                 >
                   + Add Questions
@@ -214,12 +318,14 @@ export const AdminDashboard = () => {
                 <button 
                   onClick={() => handleEditClick(q)} 
                   className="text-amber-400 hover:text-amber-300"
+                  title="Edit Quiz Details"
                 >
                   <Edit className="w-5 h-5" />
                 </button>
                 <button 
                   onClick={() => deleteQuiz(q._id)} 
                   className="text-red-400 hover:text-red-300"
+                  title="Delete Quiz"
                 >
                   <Trash2 className="w-5 h-5" />
                 </button>
