@@ -36,12 +36,24 @@ router.post('/', verifyAdmin, async (req, res) => {
 });
 
 // Update Quiz & Questions (Admin Only)
-router.put('/:id', verifyAdmin, async (req, res) => {
+// PUT route to update quiz details and its questions array
+router.put('/:id', async (req, res) => {
   try {
-    const updatedQuiz = await Quiz.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const { title, level, category, questions } = req.body;
+
+    const updatedQuiz = await Quiz.findByIdAndUpdate(
+      req.params.id,
+      { title, level, category, questions }, // <-- Ensure questions array is included here
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedQuiz) {
+      return res.status(404).json({ message: 'Quiz not found' });
+    }
+
     res.json(updatedQuiz);
   } catch (err) {
-    res.status(400).json({ message: 'Failed to update quiz.' });
+    res.status(400).json({ error: err.message });
   }
 });
 
