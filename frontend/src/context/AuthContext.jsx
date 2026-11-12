@@ -1,41 +1,48 @@
-import { createContext, useState, useEffect } from "react";
+import { createContext, useState } from "react";
 
 export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token') || null);
+  const [user, setUser] = useState(() => {
+    const savedUser = localStorage.getItem("user");
+    const savedToken = localStorage.getItem("token");
 
-  // Load user and token from localStorage on initial load
-  useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    if (savedUser && token) {
+    if (savedUser && savedToken) {
       try {
-        setUser(JSON.parse(savedUser));
-      } catch (e) {
-        console.error("Failed to parse user from localStorage", e);
+        return JSON.parse(savedUser);
+      } catch (error) {
+        localStorage.removeItem("user");
+        localStorage.removeItem("token");
+        return null;
       }
     }
-  }, [token]);
+    return null;
+  });
 
-  // Define the login function called by AuthModal
+  const [token, setToken] = useState(
+    () => localStorage.getItem("token") || null
+  );
+
+  // LOGIN
   const login = (userData, authToken) => {
-    localStorage.setItem('token', authToken);
-    localStorage.setItem('user', JSON.stringify(userData));
+    localStorage.setItem("token", authToken);
+    localStorage.setItem("user", JSON.stringify(userData));
+
     setToken(authToken);
     setUser(userData);
   };
 
-  // Optional: define a logout function if needed later
+  // LOGOUT
   const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+
     setToken(null);
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, setUser }}>
+    <AuthContext.Provider value={{ user, token, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

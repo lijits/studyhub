@@ -1,68 +1,102 @@
+
 const express = require('express');
 const Quiz = require('../models/Quiz');
 const { verifyToken, verifyAdmin } = require('../middleware/authMiddleware');
+
 const router = express.Router();
 
-// Get all quizzes (Protected: Requires Login)
+// GET ALL QUIZZES
 router.get('/', verifyToken, async (req, res) => {
   try {
     const quizzes = await Quiz.find();
-    res.json(quizzes);
+    res.status(200).json(quizzes);
   } catch (err) {
+    console.error('Fetch quizzes error:', err);
     res.status(500).json({ message: 'Failed to fetch quizzes.' });
   }
 });
 
-// Get single quiz by ID
+// GET SINGLE QUIZ
 router.get('/:id', verifyToken, async (req, res) => {
   try {
     const quiz = await Quiz.findById(req.params.id);
-    if (!quiz) return res.status(404).json({ message: 'Quiz not found.' });
-    res.json(quiz);
+
+    if (!quiz) {
+      return res.status(404).json({ message: 'Quiz not found.' });
+    }
+
+    res.status(200).json(quiz);
   } catch (err) {
+    console.error('Get quiz error:', err);
     res.status(500).json({ message: 'Error loading quiz.' });
   }
 });
 
-// Create Quiz (Admin Only)
-router.post('/', verifyAdmin, async (req, res) => {
+// CREATE QUIZ - ADMIN ONLY
+router.post('/', verifyToken, verifyAdmin, async (req, res) => {
   try {
     const newQuiz = new Quiz(req.body);
     await newQuiz.save();
+
     res.status(201).json(newQuiz);
   } catch (err) {
-    res.status(400).json({ message: 'Failed to create quiz.' });
+    console.error('Create quiz error:', err);
+    res.status(400).json({
+      message: 'Failed to create quiz.',
+      error: err.message
+    });
   }
 });
 
-// Update Quiz & Questions (Admin Only)
-// PUT route to update quiz details and its questions array
-router.put('/:id', async (req, res) => {
+// UPDATE QUIZ AND QUESTIONS - ADMIN ONLY
+router.put('/:id', verifyToken, verifyAdmin, async (req, res) => {
   try {
     const { title, level, category, questions } = req.body;
 
     const updatedQuiz = await Quiz.findByIdAndUpdate(
       req.params.id,
-      { title, level, category, questions }, // <-- Ensure questions array is included here
-      { new: true, runValidators: true }
+      {
+        $set: {
+          title,
+          level,
+          category,
+          questions
+        }
+      },
+      {
+        new: true,
+        runValidators: true
+      }
     );
 
     if (!updatedQuiz) {
-      return res.status(404).json({ message: 'Quiz not found' });
+      return res.status(404).json({ message: 'Quiz not found.' });
     }
 
-    res.json(updatedQuiz);
+    res.status(200).json(updatedQuiz);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error('Update quiz error:', err);
+    res.status(400).json({
+      message: 'Failed to update quiz.',
+      error: err.message
+    });
   }
 });
 
-// Delete Quiz (Admin Only)
-router.delete('/:id', verifyAdmin, async (req, res) => {
+// DELETE QUIZ - ADMIN ONLY
+router.delete('/:id', verifyToken, verifyAdmin, async (req, res) => {
   try {
-    await Quiz.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Quiz deleted successfully.' });
+    const deletedQuiz = await Quiz.findByIdAndDelete(req.params.id);
+
+    if (!deletedQuiz) {
+      return res.status(404).json({ message: 'Quiz not found.' });
+    }
+
+    res.status(200).json({
+      message: 'Quiz deleted successfully.'
+    });
   } catch (err) {
+    console.error('Delete quiz error:', err);
     res.status(500).json({ message: 'Failed to delete quiz.' });
   }
 });

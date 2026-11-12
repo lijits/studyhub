@@ -20,17 +20,24 @@ export const Competitions = () => {
       type: 'Online Singing Contest',
       description: 'Upload your 2-minute vocal track and let the community vote.',
       reward: 'Professional Studio Mic & Headphones',
-      eventDate: 'not announced',
+      eventDate: 'Not announced',
       status: 'Upcoming'
     }
   ]);
+
   const { token } = useContext(AuthContext);
 
   useEffect(() => {
     if (token) {
-      axios.get('http://localhost:5000/api/competitions', { headers: { Authorization: `Bearer ${token}` } })
-        .then(res => { if (res.data.length > 0) setCompetitions(res.data); })
-        .catch(err => console.error(err));
+      axios.get('http://localhost:5000/api/competitions', { 
+        headers: { Authorization: `Bearer ${token}` } 
+      })
+        .then(res => { 
+          if (Array.isArray(res.data) && res.data.length > 0) {
+            setCompetitions(res.data); 
+          }
+        })
+        .catch(err => console.error('Error fetching competitions:', err));
     }
   }, [token]);
 

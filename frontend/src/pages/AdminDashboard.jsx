@@ -19,32 +19,51 @@ export const AdminDashboard = () => {
 
   const headers = { Authorization: `Bearer ${token}` };
 
-  const fetchData = () => {
-    axios.get('http://localhost:5000/api/admin/users', { headers }).then(res => setUsers(res.data));
-    axios.get('http://localhost:5000/api/quizzes', { headers }).then(res => setQuizzes(res.data));
+  const fetchData = async () => {
+    try {
+      const [usersRes, quizzesRes] = await Promise.all([
+        axios.get('http://localhost:5000/api/admin/users', { headers }),
+        axios.get('http://localhost:5000/api/quizzes', { headers })
+      ]);
+      setUsers(usersRes.data);
+      setQuizzes(quizzesRes.data);
+
+      // Keep selectedQuiz in sync if it's currently open and being edited
+      if (selectedQuiz) {
+        const latestQuiz = quizzesRes.data.find(q => q._id === selectedQuiz._id);
+        if (latestQuiz) setSelectedQuiz(latestQuiz);
+      }
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    if (token) {
+      fetchData();
+    }
+  }, [token]);
 
   const deleteUser = (id) => {
     axios.delete(`http://localhost:5000/api/admin/users/${id}`, { headers }).then(() => fetchData());
   };
 
   const deleteQuiz = (id) => {
-    axios.delete(`http://localhost:5000/api/quizzes/${id}`, { headers }).then(() => fetchData());
+    axios.delete(`http://localhost:5000/api/quizzes/${id}`, { headers }).then(() => {
+      if (selectedQuiz?._id === id) setSelectedQuiz(null);
+      fetchData();
+    });
   };
 
   const createQuiz = (e) => {
     e.preventDefault();
     if (editingQuiz) {
-      // Update existing quiz metadata
       axios.put(`http://localhost:5000/api/quizzes/${editingQuiz._id}`, newQuiz, { headers }).then(() => {
         setNewQuiz({ title: '', level: 'Beginner', category: '', questions: [] });
         setEditingQuiz(null);
         fetchData();
       });
     } else {
-      // Create new quiz
       axios.post('http://localhost:5000/api/quizzes', newQuiz, { headers }).then(() => {
         setNewQuiz({ title: '', level: 'Beginner', category: '', questions: [] });
         fetchData();
@@ -69,55 +88,88 @@ export const AdminDashboard = () => {
     setEditingQuestionIndex(index);
     setQuestionText(question.questionText);
     setOptions(question.options || ['', '', '', '']);
-    setCorrectAnswer(question.correctAnswer ?? 0);
+    setCorrectAnswer(question.correctAnswerIndex ?? 0);
   };
 
-  const handleDeleteQuestion = (index) => {
+  const handleDeleteQuestion = async (index) => {
     if (!selectedQuiz) return;
     const updatedQuestions = selectedQuiz.questions.filter((_, i) => i !== index);
 
-    axios.put(`http://localhost:5000/api/quizzes/${selectedQuiz._id}`, {
-      ...selectedQuiz,
-      questions: updatedQuestions
-    }, { headers }).then(() => {
-      fetchData();
-      // Update local selectedQuiz state to reflect changes instantly
-      setSelectedQuiz({ ...selectedQuiz, questions: updatedQuestions });
-    });
+    try {
+      await axios.put(`http://localhost:5000/api/quizzes/${selectedQuiz._id}`, {
+        title: selectedQuiz.title,
+        level: selectedQuiz.level,
+        category: selectedQuiz.category,
+        questions: updatedQuestions
+      }, { headers });
+      
+      await fetchData();
+    } catch (error) {
+      console.error("Failed to delete question:", error);
+    }
   };
-
-  const handleSaveQuestion = (e) => {
+const handleSaveQuestion = async (e) => {
     e.preventDefault();
+
     if (!selectedQuiz) return;
 
     const newQuestionObj = {
-      questionText,
-      options,
-      correctAnswer: Number(correctAnswer)
+      questionText: questionText.trim(),
+      options: options.map(option => option.trim()),
+      correctAnswerIndex: Number(correctAnswer)
     };
 
-    let updatedQuestions = [...(selectedQuiz.questions || [])];
+    if (!newQuestionObj.questionText || newQuestionObj.options.some(option => !option)) {
+      alert('Please fill in the question and all four options.');
+      return;
+    }
+
+    // Map existing questions to ensure they all use correctAnswerIndex, preventing Mongoose validation errors
+    const normalizedQuestions = (selectedQuiz.questions || []).map(q => ({
+      questionText: q.questionText,
+      options: q.options,
+      correctAnswerIndex: q.correctAnswerIndex !== undefined ? Number(q.correctAnswerIndex) : Number(q.correctAnswer ?? 0)
+    }));
+
+    let updatedQuestions = [...normalizedQuestions];
 
     if (editingQuestionIndex !== null) {
-      // Edit existing question
       updatedQuestions[editingQuestionIndex] = newQuestionObj;
     } else {
-      // Add new question
       updatedQuestions.push(newQuestionObj);
     }
 
-    axios.put(`http://localhost:5000/api/quizzes/${selectedQuiz._id}`, {
-      ...selectedQuiz,
-      questions: updatedQuestions
-    }, { headers }).then(() => {
-      fetchData();
-      // Keep modal open and refresh local selectedQuiz state
-      setSelectedQuiz({ ...selectedQuiz, questions: updatedQuestions });
+    try {
+      const response = await axios.put(
+        `http://localhost:5000/api/quizzes/${selectedQuiz._id}`,
+        {
+          title: selectedQuiz.title,
+          level: selectedQuiz.level,
+          category: selectedQuiz.category,
+          questions: updatedQuestions
+        },
+        { headers }
+      );
+
+      setSelectedQuiz(response.data);
+
       setQuestionText('');
       setOptions(['', '', '', '']);
       setCorrectAnswer(0);
       setEditingQuestionIndex(null);
-    });
+
+      await fetchData();
+
+      alert('Question saved successfully!');
+    } catch (error) {
+      console.error('Question save error:', error.response?.data || error);
+
+      alert(
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        'Failed to save question.'
+      );
+    }
   };
 
   return (
@@ -274,10 +326,15 @@ export const AdminDashboard = () => {
                     <div key={qIndex} className="bg-slate-900 p-3 rounded-lg border border-slate-700 flex justify-between items-center">
                       <div>
                         <p className="text-sm font-medium text-white">{qIndex + 1}. {q.questionText}</p>
-                        <p className="text-xs text-slate-400 mt-1">Correct Answer: Option {Number(q.correctAnswer) + 1}</p>
+                        <p className="text-xs text-slate-400 mt-1">
+                          Correct Answer: Option {Number.isInteger(Number(q.correctAnswerIndex)) && Number(q.correctAnswerIndex) >= 0 && Number(q.correctAnswerIndex) <= 3
+                            ? Number(q.correctAnswerIndex) + 1
+                            : 'Invalid answer data'}
+                        </p>
                       </div>
                       <div className="flex items-center gap-2">
                         <button 
+                          type="button"
                           onClick={() => handleEditQuestionClick(qIndex, q)} 
                           className="text-amber-400 hover:text-amber-300 p-1"
                           title="Edit Question"
@@ -285,6 +342,7 @@ export const AdminDashboard = () => {
                           <Edit className="w-4 h-4" />
                         </button>
                         <button 
+                          type="button"
                           onClick={() => handleDeleteQuestion(qIndex)} 
                           className="text-red-400 hover:text-red-300 p-1"
                           title="Delete Question"
@@ -306,7 +364,7 @@ export const AdminDashboard = () => {
             <div key={q._id} className="flex justify-between items-center bg-slate-800 p-4 rounded-xl">
               <div>
                 <h4 className="font-bold text-white">{q.title}</h4>
-                <p className="text-xs text-slate-400">{q.level} • {q.category} | Questions: {q.questions?.length || 0}</p>
+                <p className="text-xs text-slate-400">{q.level} | {q.category} | Questions: {q.questions?.length || 0}</p>
               </div>
               <div className="flex items-center gap-3">
                 <button 
